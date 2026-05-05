@@ -124,7 +124,6 @@ type affiliateRepoStub struct {
 	bindCalled        bool
 	bindUserID        int64
 	bindInviterID     int64
-	bindSignupReward  float64
 	bindResult        bool
 	bindErr           error
 	transferCalled    bool
@@ -144,15 +143,14 @@ func (s *affiliateRepoStub) GetAffiliateByCode(context.Context, string) (*Affili
 	return s.codeSummary, nil
 }
 
-func (s *affiliateRepoStub) BindInviter(_ context.Context, userID, inviterID int64, signupReward float64) (bool, error) {
+func (s *affiliateRepoStub) BindInviter(_ context.Context, userID, inviterID int64) (bool, error) {
 	s.bindCalled = true
 	s.bindUserID = userID
 	s.bindInviterID = inviterID
-	s.bindSignupReward = signupReward
 	return s.bindResult, s.bindErr
 }
 
-func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int) (bool, error) {
+func (s *affiliateRepoStub) AccrueQuota(context.Context, int64, int64, float64, int, *int64) (bool, error) {
 	return true, nil
 }
 
@@ -206,8 +204,7 @@ func TestBindInviterByCode_UsesSignupRewardSetting(t *testing.T) {
 	svc := &AffiliateService{
 		repo: repo,
 		settingService: affiliateSettingServiceStub(map[string]string{
-			SettingKeyAffiliateEnabled:      "true",
-			SettingKeyAffiliateSignupReward: "3",
+			SettingKeyAffiliateEnabled: "true",
 		}),
 	}
 
@@ -216,7 +213,6 @@ func TestBindInviterByCode_UsesSignupRewardSetting(t *testing.T) {
 	require.True(t, repo.bindCalled)
 	require.Equal(t, int64(2), repo.bindUserID)
 	require.Equal(t, int64(1), repo.bindInviterID)
-	require.Equal(t, 3.0, repo.bindSignupReward)
 }
 
 func TestTransferAffiliateQuota_RequiresThreshold(t *testing.T) {
@@ -256,7 +252,6 @@ func TestGetAffiliateDetail_ExposesProgramSettings(t *testing.T) {
 		repo: repo,
 		settingService: affiliateSettingServiceStub(map[string]string{
 			SettingKeyAffiliateRebateRate:        "10",
-			SettingKeyAffiliateSignupReward:      "3",
 			SettingKeyAffiliateTransferThreshold: "5",
 		}),
 	}
@@ -265,7 +260,6 @@ func TestGetAffiliateDetail_ExposesProgramSettings(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 10.0, detail.RebateRate)
 	require.Equal(t, 10.0, detail.EffectiveRebateRatePercent)
-	require.Equal(t, AffiliateSignupRewardDefault, detail.SignupReward)
 	require.Equal(t, AffiliateTransferThresholdDefault, detail.TransferMin)
 	require.Equal(t, 2.0, detail.TransferGap)
 	require.False(t, detail.CanTransfer)

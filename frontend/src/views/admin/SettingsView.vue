@@ -2463,34 +2463,6 @@
                   >
                     {{
                       translateOrFallback(
-                        "admin.settings.defaults.affiliateSignupReward",
-                        "邀请注册奖励",
-                      )
-                    }}
-                  </label>
-                  <input
-                    v-model.number="form.affiliate_signup_reward"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    class="input"
-                    placeholder="3.00"
-                  />
-                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    {{
-                      translateOrFallback(
-                        "admin.settings.defaults.affiliateSignupRewardHint",
-                        "新用户通过邀请链接注册成功后，奖励给邀请人的返利额度",
-                      )
-                    }}
-                  </p>
-                </div>
-                <div>
-                  <label
-                    class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      translateOrFallback(
                         "admin.settings.defaults.affiliateTransferThreshold",
                         "返利划转门槛",
                       )
@@ -3137,6 +3109,31 @@
                   </p>
                 </div>
                 <Toggle v-model="form.enable_cch_signing" />
+              </div>
+
+              <!-- Anthropic Cache TTL 1h Injection -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjection",
+                      )
+                    }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      t(
+                        "admin.settings.gatewayForwarding.anthropicCacheTTL1hInjectionHint",
+                      )
+                    }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.enable_anthropic_cache_ttl_1h_injection"
+                />
               </div>
             </div>
           </div>
@@ -5752,7 +5749,6 @@ const form = reactive<SettingsForm>({
   totp_encryption_key_configured: false,
   default_balance: 0,
   affiliate_rebate_rate: 10,
-  affiliate_signup_reward: 3,
   affiliate_transfer_threshold: 5,
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
@@ -5893,6 +5889,7 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   enable_cch_signing: false,
+  enable_anthropic_cache_ttl_1h_injection: false,
   // Balance & quota notification
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -6707,10 +6704,6 @@ async function saveSettings() {
         100,
         Math.max(0, Number(form.affiliate_rebate_rate) || 0),
       ),
-      affiliate_signup_reward: Math.max(
-        0,
-        Number(form.affiliate_signup_reward) || 0,
-      ),
       affiliate_transfer_threshold: Math.max(
         0,
         Number(form.affiliate_transfer_threshold) || 0,
@@ -6814,6 +6807,8 @@ async function saveSettings() {
       enable_fingerprint_unification: form.enable_fingerprint_unification,
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       enable_cch_signing: form.enable_cch_signing,
+      enable_anthropic_cache_ttl_1h_injection:
+        form.enable_anthropic_cache_ttl_1h_injection,
       // Payment configuration
       payment_enabled: form.payment_enabled,
       payment_min_amount: Number(form.payment_min_amount) || 0,

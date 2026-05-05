@@ -141,7 +141,6 @@ export interface UserAffiliateDetail {
   aff_quota: number
   aff_frozen_quota: number
   aff_history_quota: number
-  signup_reward_amount: number
   rebate_rate_percent: number
   transfer_threshold: number
   transfer_shortfall: number

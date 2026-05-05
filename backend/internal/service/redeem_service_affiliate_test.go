@@ -32,11 +32,11 @@ func (s *redeemAffiliateRepoStub) GetAffiliateByCode(context.Context, string) (*
 	panic("unexpected GetAffiliateByCode call")
 }
 
-func (s *redeemAffiliateRepoStub) BindInviter(context.Context, int64, int64, float64) (bool, error) {
+func (s *redeemAffiliateRepoStub) BindInviter(context.Context, int64, int64) (bool, error) {
 	panic("unexpected BindInviter call")
 }
 
-func (s *redeemAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, _ int) (bool, error) {
+func (s *redeemAffiliateRepoStub) AccrueQuota(_ context.Context, inviterID, inviteeUserID int64, amount float64, _ int, _ *int64) (bool, error) {
 	s.accrueCalls++
 	s.accrueInviter = inviterID
 	s.accrueInvitee = inviteeUserID
@@ -98,7 +98,6 @@ func newRedeemAffiliateServiceStub() *AffiliateService {
 			SettingKeyAffiliateRebateFreezeHours:   "0",
 			SettingKeyAffiliateRebateDurationDays:  "0",
 			SettingKeyAffiliateRebatePerInviteeCap: "0",
-			SettingKeyAffiliateSignupReward:        "3",
 			SettingKeyAffiliateTransferThreshold:   "5",
 		}),
 	}
