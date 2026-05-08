@@ -11,6 +11,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
@@ -27,6 +28,15 @@ const (
 	redeemRateLimitDuration = time.Hour
 	redeemLockDuration      = 10 * time.Second // 锁超时时间，防止死锁
 )
+
+type ctxKeySkipRedeemAffiliate struct{}
+
+// ContextSkipRedeemAffiliate returns a context that suppresses the redeem-level
+// affiliate rebate. Used by payment fulfillment which handles rebate separately
+// via applyAffiliateRebateForOrder (with audit-log deduplication).
+func ContextSkipRedeemAffiliate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeySkipRedeemAffiliate{}, true)
+}
 
 // RedeemCache defines cache operations for redeem service
 type RedeemCache interface {
@@ -83,10 +93,6 @@ type RedeemService struct {
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 }
 
-type redeemContextKey string
-
-const redeemSkipAffiliateRebateKey redeemContextKey = "redeem_skip_affiliate_rebate"
-
 // NewRedeemService 创建兑换码服务实例
 func NewRedeemService(
 	redeemRepo RedeemCodeRepository,
@@ -96,6 +102,7 @@ func NewRedeemService(
 	billingCacheService *BillingCacheService,
 	entClient *dbent.Client,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	affiliateService *AffiliateService,
 ) *RedeemService {
 	return &RedeemService{
 		redeemRepo:           redeemRepo,
@@ -105,26 +112,8 @@ func NewRedeemService(
 		billingCacheService:  billingCacheService,
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
+		affiliateService:     affiliateService,
 	}
-}
-
-func (s *RedeemService) SetAffiliateService(affiliateService *AffiliateService) {
-	if s == nil {
-		return
-	}
-	s.affiliateService = affiliateService
-}
-
-func withSkipAffiliateRebate(ctx context.Context) context.Context {
-	return context.WithValue(ctx, redeemSkipAffiliateRebateKey, true)
-}
-
-func shouldSkipAffiliateRebate(ctx context.Context) bool {
-	if ctx == nil {
-		return false
-	}
-	skip, _ := ctx.Value(redeemSkipAffiliateRebateKey).(bool)
-	return skip
 }
 
 // GenerateRandomCode 生成随机兑换码
@@ -337,7 +326,6 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	}
 
 	// 执行兑换逻辑（兑换码已被锁定，此时可安全操作）
-	var creditedBalance float64
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
 		amount := redeemCode.Value
@@ -348,8 +336,6 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
 		}
-		creditedBalance = amount
-
 	case RedeemTypeConcurrency:
 		delta := int(redeemCode.Value)
 		// 负数为退款扣减，并发数最低为 0
@@ -395,10 +381,9 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	// 事务提交成功后失效缓存
 	s.invalidateRedeemCaches(ctx, userID, redeemCode)
 
-	if redeemCode.Type == RedeemTypeBalance && creditedBalance > 0 && s.affiliateService != nil && !shouldSkipAffiliateRebate(ctx) {
-		if _, err := s.affiliateService.AccrueInviteRebate(ctx, userID, creditedBalance); err != nil {
-			return nil, fmt.Errorf("accrue affiliate rebate: %w", err)
-		}
+	// 余额类正数兑换码触发邀请返利（best-effort，失败不影响兑换结果）
+	if redeemCode.Type == RedeemTypeBalance && redeemCode.Value > 0 {
+		s.tryAccrueAffiliateRebateForRedeem(ctx, userID, redeemCode.Value)
 	}
 
 	// 重新获取更新后的兑换码
@@ -447,6 +432,26 @@ func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64
 				_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
 			}()
 		}
+	}
+}
+
+func (s *RedeemService) tryAccrueAffiliateRebateForRedeem(ctx context.Context, userID int64, amount float64) {
+	if ctx.Value(ctxKeySkipRedeemAffiliate{}) != nil {
+		return
+	}
+	if s.affiliateService == nil {
+		return
+	}
+	if !s.affiliateService.IsEnabled(ctx) {
+		return
+	}
+	rebate, err := s.affiliateService.AccrueInviteRebate(ctx, userID, amount)
+	if err != nil {
+		logger.LegacyPrintf("service.redeem", "[Redeem] affiliate rebate failed for user %d amount %.2f: %v", userID, amount, err)
+		return
+	}
+	if rebate > 0 {
+		logger.LegacyPrintf("service.redeem", "[Redeem] affiliate rebate accrued %.8f for inviter of user %d", rebate, userID)
 	}
 }
 
